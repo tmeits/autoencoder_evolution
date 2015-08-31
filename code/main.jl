@@ -3,12 +3,14 @@ using EvolutionTestFunctions
 
 tic()
 tolerance=0.000000000000000000
-max_iterations=100
-population_size=10
-ec=Evolution.EvolutionConfig(0.2,0.01,tolerance,max_iterations,population_size)
+max_iterations=1000
+population_size=20
+ec=Evolution.EvolutionConfig(0.5,0.1,tolerance,max_iterations,population_size)
 
-ssc=EvolutionTestFunctions.SphereSearchSpaceConfig(1)
-#ssc=EvolutionTestFunctions.RosenbrockSearchSpaceConfig(2)
+#ssc=EvolutionTestFunctions.SphereSearchSpaceConfig(50)
+#ssc=EvolutionTestFunctions.RosenbrockSearchSpaceConfig(100)
+ssc=EvolutionTestFunctions.StyblinskiTangSearchSpaceConfig(20)
+#ssc=EvolutionTestFunctions.AckleySearchSpaceConfig()
 
 final_population,iterations=Evolution.differential_evolution(ec,ssc)
 time=toc()

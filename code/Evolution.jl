@@ -55,6 +55,7 @@ function differential_evolution_iteration(c::EvolutionConfig,p::Population)
       crossovers[rand(1:p.config.dimensions)]=true
       mutant=p.individuals[:,i]
       mutant[crossovers]=base_mutant[crossovers]
+
       if (p.config.fitness(p.individuals[:,i])<p.config.fitness(mutant))
         p.individuals[:,i]=mutant
       end
@@ -96,7 +97,7 @@ function print_results(p,iterations)
   fitnesses=population_fitnesses(p)
   results=[fitnesses ; p.individuals]'
   println("DE results :")
-  println(results)
+  println(round(results,8))
   @printf "%d iterations executed\n" iterations
   best_individual_index=indmax(fitnesses)
   best_individual=p.individuals[:,best_individual_index]
