@@ -14,5 +14,6 @@ ssc=EvolutionTestFunctions.StyblinskiTangSearchSpaceConfig(20)
 
 final_population,iterations=Evolution.differential_evolution(ec,ssc)
 time=toc()
+
 Evolution.print_results(final_population,iterations)
 @printf "Time elapsed %f \n" time

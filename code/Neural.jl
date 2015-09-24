@@ -88,44 +88,45 @@ function optim_error_derivative(w::FlattenedLayers,x::Input,y::Output,topology::
     net_error_derivative(w,x,y,topology)
 end
 
-function derivative_example_same_layer(w::Layer,dw::LayerDerivative,oAnt::Output)
-    current,previous,outputs=size(dw)
-    #size(oAnt)=previous
-    net=w*oAnt; # current x previous * previous -> current
-    O=activation(net) #current
-    dO=activation_derivative(net) #current
-    for i=1:current
-      dw[i,:,i]=dO[i]*oAnt;
+function derivative_example_same_layer(net::Input,dw::LayerDerivative,oAnt::Output)
+    outputs,current,previous=size(dw)
+    dO=activation_derivative(net) # j * j
+    for o=1:outputs # derivative != 0 only if output = current
+          dw[o,o,:]= dO.*oAnt # d0 is a j*j  matrix, but it is diagonal, so diag(d0)*oAnt=d0.*oAnt
     end
 end
 
+#function einsum(a,b,ia,ib)
+#    sa=size(a)
+#    sb=size(b)
+#    splice!(sa,ia)
+#    splice!(sb,ib)
+#    c=zeros([sa sb])
+#end
+
 function net_derivative_example(w::Layers,x::Input,topology:Topology)
   oAnt=x;
-  dWjo=zero_weights_derivatives(topology[1:2],2)
-  Wjo=w[1]
-  net=Wjo*oAnt
+  dWj=zero_weights_derivatives(topology[1:2],2)
+  Wj=w[1]
+  net=Wj*oAnt
   o=activation(net)
-  derivative_example_same_layer(w[1],dWjo[1],oAnt)
-
-  for jo=3:length(topology)
-    Wjo=w[jo]
-
+  derivative_example_same_layer(net,dWjo[1],oAnt)
+  #W indexados con 1 based y topology con 2-based
+  for j=2:length(topology)-1
+    Wj=w[j] # j x (j-1)
     oAnt=o
-    o=Wjo*oAnt
+    net=Wj*oAnt
+    o=activation(net)
     dO=activation_derivative(net) #current
+    dWja=dWj # list of derivatives of O[j-1] wrt W[1:j-1]
+    dWj=zero_weights_derivatives(topology[1:j],topology[j])
 
-    dWant=dWjo
-    dWjo=zero_weights_derivatives(topology[1:jo],topology[jo])
-
-    for jw=1:jo-1
-        for i=1:
-          for i2=1:
-            
-          end
-        end
+    A = diagm(vec(dO)) * Wj# j x (j-1)
+    for jp=1:j-1
+        dWjp=dWja[jp] #O[j-1] wrt W[jp] --  j-1 x (jp x jp-1)
+        dWj[jp]= einsum(A,dWjp,2,1)# derivative of O[j] wrt W[jp] -- j x (jp x jp-1)
     end
-    derivative_example_same_layer(w[jo],dWjo[jo],oAnt) # jo=jw
-
+    derivative_example_same_layer(net,dWjo[j],oAnt) # jo=jw
   end
   dW
 end
@@ -141,7 +142,7 @@ function net_error_derivative(w::Layers,x::Input,y::Output,topology:Topology)
         ld=loss_derivative(oi,yi)
         dEij=zeros(size(dE[j]))
         for k=1:length(ld)
-          dEij+=dWi[j][:,:,k]*ld[k]
+          dEij+=dWi[j][k,:,:]*ld[k]
         dE[j]=dE[j]+dEij
       end
     end
@@ -150,7 +151,7 @@ end
 
 function zero_weights_derivatives(topology::Topology,outputs)
   for i=1:length(topology)-1
-    w[i]=zeros(topology[i+1],topology[i],outputs)
+    w[i]=zeros(outputs,topology[i+1],topology[i])
   end
   w
 end
