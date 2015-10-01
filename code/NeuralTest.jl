@@ -54,3 +54,25 @@ facts("Test derivative") do
   @fact size(dW[1]) --> (5,4,3)
   @fact size(dW[2]) --> (5,5,4)
 end
+
+facts("Test gradient checking") do
+  (dW, o) = Neural.net_derivative_example(W, x, topology)
+  dWp = zero_weights_derivatives(topology)
+  for l=1:length(W)
+    Wl = copy(W[l])
+    (nUnits, nWeights) = size(Wl)
+    for u = 1:nUnits
+      for weight = 1:nWeights
+        Wl[u, weight] += eps(1.0)
+        Yplus = Neural.apply(Wl, x)
+        Wl[u, weight] -= eps(2.0)
+        Yminus = Neural.apply(Wl, x)
+        dWp[l][:,u,weight] = (Yplus - Yminus) / eps(2.0)
+      end
+    end
+  end
+
+  for l = 1:length(W)
+    @fact dWp[l] --> roughly(dW[l]; atol=eps(3.0)) "wrong derivative at layer $l"
+  end
+end

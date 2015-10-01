@@ -93,19 +93,19 @@ function optim_error_derivative(w::FlattenedLayers, x::Input, y::Output, topolog
 end
 
 function derivative_example_same_layer(net::Input, dw::LayerDerivative, oAnt::Output)
+    println("Hey!!")
     outputs,current,previous=size(dw)
     dO=activation_derivative(net) # j * j
     for o=1:outputs # derivative != 0 only if output = current
-        println(string("dO size", size(dO)))
-        println(string("oAnt size", size(oAnt)))
         dw[o,o,:]= oAnt * dO[o] # d0 is a j*j  matrix, but it is diagonal, so diag(d0)*oAnt=d0.*oAnt
     end
+    println("Bye!!")
 end
 
-function einsum23_21(matrix, tensor)
+function einsum23_21(m, t)
   #2nd index of matrix and 1st index of tensor
-  (m1, m2) = size(matrix)
-  (t1, t2, t3) = size(tensor)
+  (m1, m2) = size(m)
+  (t1, t2, t3) = size(t)
   result = zeros(m1, t2, t3)
   if m2 != t1
     error("Indexes m1 and t2 don't match.")
@@ -113,7 +113,8 @@ function einsum23_21(matrix, tensor)
   for i=1:m1
     for j=1:t2
       for k=1:t3
-        result[i,j,k] = matrix[m1,:] * tensor[:,t2,t3]
+        r = dot(vec(m[m1,:]), vec(t[:,t2,t3]))
+        result[i,j,k] = r
       end
     end
   end
@@ -127,6 +128,7 @@ function net_derivative_example(w::Layers, x::Input, topology::Topology)
   net=Wj*oAnt
   o=activation(net)
   derivative_example_same_layer(net, dWj[1], oAnt)
+  println(dWj[1])
   #W indexados con 1 based y topology con 2-based
   for j=2:length(topology)-1
     Wj=w[j] # j x (j-1)
