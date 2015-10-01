@@ -9,8 +9,11 @@ typealias LayerDerivative Array{Float64,3}
 typealias LayerDerivatives Vector{LayerDerivative}
 
 typealias FlattenedLayers Vector{Float64}
-typealias Input Array{Float64,2}
-typealias Output Array{Float64,2}
+typealias Input Array{Float64,1}
+typealias Inputs Array{Float64,2}
+typealias Output Array{Float64,1}
+typealias Outputs Array{Float64,2}
+
 
 typealias Topology Vector{Int}
 
@@ -19,7 +22,7 @@ type Net
     layers::Layers
 end
 
-function network_topology(x::Input,hidden::Int,y::Output)
+function network_topology(x::Inputs,hidden::Int,y::Outputs)
   inputs,examples=size(x)
   outputs,examples=size(y)
   [inputs,hidden,outputs]
@@ -69,7 +72,7 @@ function loss(y_estimated,y)
     0.5*sum((y_estimated-y).^2,1)
 end
 
-function apply(w::Layers,x::Input)
+function apply(w::Layers,x::Inputs)
   for i=1:length(w)
     x=activation(w[i]*x)
   end
@@ -77,29 +80,29 @@ function apply(w::Layers,x::Input)
 end
 
 
-function optim_error(w::FlattenedLayers, x::Input, y::Output, topology::Topology)
+function optim_error(w::FlattenedLayers, x::Inputs, y::Outputs, topology::Topology)
     w=unflatten_layers(w,topology)
-    net_error(w,x,y)
+    e=net_error(w,x,y)
+    println(string("error=",e))
+    return e
 end
-function net_error(w::Layers,x::Input,y::Output)
+function net_error(w::Layers,x::Inputs,y::Outputs)
     y_estimated=apply(w,x)
     mean(loss(y_estimated,y))
 end
 
 
-function optim_error_derivative(w::FlattenedLayers, x::Input, y::Output, topology::Topology)
+function optim_error_derivative(w::FlattenedLayers, x::Inputs, y::Outputs, topology::Topology)
     w=unflatten_layers(w,topology)
     net_error_derivative(w,x,y,topology)
 end
 
 function derivative_example_same_layer(net::Input, dw::LayerDerivative, oAnt::Output)
-    println("Hey!!")
     outputs,current,previous=size(dw)
     dO=activation_derivative(net) # j * j
     for o=1:outputs # derivative != 0 only if output = current
         dw[o,o,:]= oAnt * dO[o] # d0 is a j*j  matrix, but it is diagonal, so diag(d0)*oAnt=d0.*oAnt
     end
-    println("Bye!!")
 end
 
 function einsum23_21(m, t)
@@ -128,7 +131,6 @@ function net_derivative_example(w::Layers, x::Input, topology::Topology)
   net=Wj*oAnt
   o=activation(net)
   derivative_example_same_layer(net, dWj[1], oAnt)
-  println(dWj[1])
   #W indexados con 1 based y topology con 2-based
   for j=2:length(topology)-1
     Wj=w[j] # j x (j-1)
@@ -137,7 +139,7 @@ function net_derivative_example(w::Layers, x::Input, topology::Topology)
     o=activation(net)
     dO=activation_derivative(net) #current
     dWja=dWj # list of derivatives of O[j-1] wrt W[1:j-1]
-    dWj=zero_weights_derivatives(topology, j)
+    dWj=zero_weights_derivatives(topology, j + 1)
 
     A = diagm(vec(dO)) * Wj# j x (j-1)
     for jp=1:j-1
@@ -149,20 +151,21 @@ function net_derivative_example(w::Layers, x::Input, topology::Topology)
   return (dWj, o)
 end
 
-function net_error_derivative(w::Layers, x::Input, y::Output, topology::Topology)
+function net_error_derivative(w::Layers, x::Inputs, y::Outputs, topology::Topology)
     dE=zero_weights(topology)
     n=size(x,2)
     for i=1:n
-      xi=x(:,i)
-      yi=y(:,i)
+      xi=x[:,i]
+      yi=y[:,i]
       dWi,oi=net_derivative_example(w,xi,topology)
       for j=1:length(dWi)
         ld=loss_derivative(oi,yi)
         dEij=zeros(size(dE[j]))
         for k=1:length(ld)
-          dEij+=dWi[j][k,:,:]*ld[k]
+          dEij+= squeeze(dWi[j][k,:,:], 1) * ld[k]
         end
-        dE[j]=dE[j]+dEij
+        dE[j]=dE[j] + dEij
+        #dE[j] = dE[j] - dEij
       end
     end
     for j=1:length(dE)
@@ -195,11 +198,20 @@ function random_weights(topology::Topology)
   w
 end
 
-function train!(n::Net,x::Input,y::Output)
+function train(topology::Topology, x::Inputs, y::Outputs)
+      n = Net(random_weights(n.topology), topology)
+      train!(n, x, y)
+      return n
+end
+
+function train!(n::Net,x::Inputs,y::Outputs)
       f(w) = optim_error(w,x,y,n.topology)
-      g(w) = optim_error_derivative(w,x,y,n.topology)
-      n.layers=random_weights(n.topology)
-      Optim.optimize(f,g,flatten_layers(n.layers), method = :l_bfgs)
+      g = function(w,storage); storage = flatten_layers(optim_error_derivative(w,x,y,n.topology)); end
+      #n.layers = random_weights(n.topology)
+      flattened_layers = flatten_layers(n.layers)
+      Optim.optimize(f, flattened_layers, method = :nelder_mead)
+      #Optim.optimize(f, g, flattened_layers, method = :gradient_descent)
+      n.layers = unflatten_layers(flattened_layers, n.topology)
 end
 
 end
