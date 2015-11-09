@@ -1,3 +1,5 @@
+push!(LOAD_PATH,pwd())
+
 using Evolution
 using EvolutionTestFunctions
 

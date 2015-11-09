@@ -81,10 +81,10 @@ function random_indices_except(n,k,except)
   if (k>n)
     error("No puedo darte k porque tengo n y k > n")
   end
-  selected_indices=zeros(1,k);
+  selected_indices=zeros(Int64,1,k);
   all_indices=1:n
   for i=1:k
-    r=rand(all_indices)
+    r=Int(round(rand(all_indices)))
     while (r in except) || (r in selected_indices)
       r=rand(all_indices)
     end

@@ -14,6 +14,8 @@ typealias Inputs Array{Float64,2}
 typealias Output Array{Float64,1}
 typealias Outputs Array{Float64,2}
 
+typealias LayerOutputs Vector{Output}
+
 
 typealias Topology Vector{Int}
 
@@ -53,22 +55,22 @@ function flatten_layers(unflattened_w::Layers)
 end
 
 #R -> R, for each element. Vectorized implementation.
-function activation(x)
+function activation(x::Input)
   tanh(x)
 end
 
 #R -> R, for each element. Vectorized implementation.
-function activation_derivative(x)
+function activation_derivative(x::Input)
   (1-tanh(x).^2)
 end
 
 #Rn -> Rn, for each element. Vectorized implementation.
-function loss_derivative(y_estimated,y)
+function loss_derivative(y_estimated::Output,y::Output)
     (y_estimated-y)
 end
 
 #Rn -> R, for each element. Vectorized implementation.
-function loss(y_estimated,y)
+function loss(y_estimated::Output,y::Output)
     0.5*sum((y_estimated-y).^2,1)
 end
 
@@ -104,51 +106,33 @@ function derivative_example_same_layer(net::Input, dw::LayerDerivative, oAnt::Ou
         dw[o,o,:]= oAnt * dO[o] # d0 is a j*j  matrix, but it is diagonal, so diag(d0)*oAnt=d0.*oAnt
     end
 end
+function backward(w::Layers, o::LayerOutputs, topology::Topology,ld::Output)
+  dW=zero_weights(topology)
 
-function einsum23_21(m, t)
-  #2nd index of matrix and 1st index of tensor
-  (m1, m2) = size(m)
-  (t1, t2, t3) = size(t)
-  result = zeros(m1, t2, t3)
-  if m2 != t1
-    error("Indexes m1 and t2 don't match.")
+  #derivative_example_same_layer(net, dWj[1], oAnt)
+  #W indexados con 1 based y topology con 2-based
+  dW[end]=ld.*activation_derivative(o[end])
+  for j=2:length(topology)-1
+
   end
-  for i=1:m1
-    for j=1:t2
-      for k=1:t3
-        r = dot(vec(m[m1,:]), vec(t[:,t2,t3]))
-        result[i,j,k] = r
-      end
-    end
-  end
-  return result
+  return (dWj, o)
+
 end
 
 function net_derivative_example(w::Layers, x::Input, topology::Topology)
-  oAnt=x;
-  dWj=zero_weights_derivatives(topology,2) #list of tensors
-  Wj=w[1]
-  net=Wj*oAnt
-  o=activation(net)
-  derivative_example_same_layer(net, dWj[1], oAnt)
-  #W indexados con 1 based y topology con 2-based
-  for j=2:length(topology)-1
-    Wj=w[j] # j x (j-1)
-    oAnt=o
-    net=Wj*oAnt
-    o=activation(net)
-    dO=activation_derivative(net) #current
-    dWja=dWj # list of derivatives of O[j-1] wrt W[1:j-1]
-    dWj=zero_weights_derivatives(topology, j + 1)
+  o=forward(w,x,topology)
+  backward(w,o,topology)
+end
 
-    A = diagm(vec(dO)) * Wj# j x (j-1)
-    for jp=1:j-1
-        dWjp=dWja[jp] #O[j-1] wrt W[jp] --  j-1 x (jp x jp-1)
-        dWj[jp]= einsum23_21(A,dWjp)# derivative of O[j] wrt W[jp] -- j x (jp x jp-1)
-    end
-    derivative_example_same_layer(net,dWj[j],oAnt) # jo=jw
+
+function forward(w::Layers, x::Inputs, topology::Topology)#::LayerOutputs
+  o=LayerOutputs[]
+  append!(o,x)
+  for i=1:length(w)
+    x=activation(w[i]*x)
+    append!(o,x)
   end
-  return (dWj, o)
+  o
 end
 
 function net_error_derivative(w::Layers, x::Inputs, y::Outputs, topology::Topology)
@@ -157,29 +141,14 @@ function net_error_derivative(w::Layers, x::Inputs, y::Outputs, topology::Topolo
     for i=1:n
       xi=x[:,i]
       yi=y[:,i]
-      dWi,oi=net_derivative_example(w,xi,topology)
-      for j=1:length(dWi)
-        ld=loss_derivative(oi,yi)
-        dEij=zeros(size(dE[j]))
-        for k=1:length(ld)
-          dEij+= squeeze(dWi[j][k,:,:], 1) * ld[k]
-        end
-        dE[j]=dE[j] + dEij
-        #dE[j] = dE[j] - dEij
-      end
+      o=forward(w,xi,topology)
+      ld=loss_derivative(o[end],yi)
+      backward!(dE,o,topology,ld)
     end
     for j=1:length(dE)
       dE[j] /= n
     end
     return dE
-end
-
-function zero_weights_derivatives(topology::Topology, output_layer::Int)
-  w = LayerDerivatives(output_layer - 1)
-  for i = 1:output_layer-1
-    w[i]=zeros(topology[output_layer], topology[i+1], topology[i])
-  end
-  w
 end
 
 function zero_weights(topology::Topology)
