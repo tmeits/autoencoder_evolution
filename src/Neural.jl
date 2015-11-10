@@ -5,7 +5,7 @@ using Optim
 typealias Layer Array{Float64,2}
 typealias Layers Vector{Layer}
 
-typealias LayerDerivative Array{Float64,3}
+typealias LayerDerivative Array{Float64,2}
 typealias LayerDerivatives Vector{LayerDerivative}
 
 typealias FlattenedLayers Vector{Float64}
@@ -39,7 +39,6 @@ function unflatten_layers(w::FlattenedLayers,topology::Topology)
       wi = reshape(wi, topology[i+1], topology[i])
       base+=w_size
       result[i] = wi
-
   end
   result
 end
@@ -55,22 +54,22 @@ function flatten_layers(unflattened_w::Layers)
 end
 
 #R -> R, for each element. Vectorized implementation.
-function activation(x::Input)
+function activation(x)
   tanh(x)
 end
 
 #R -> R, for each element. Vectorized implementation.
-function activation_derivative(x::Input)
+function activation_derivative(x)
   (1-tanh(x).^2)
 end
 
 #Rn -> Rn, for each element. Vectorized implementation.
-function loss_derivative(y_estimated::Output,y::Output)
+function loss_derivative(y_estimated,y)
     (y_estimated-y)
 end
 
 #Rn -> R, for each element. Vectorized implementation.
-function loss(y_estimated::Output,y::Output)
+function loss(y_estimated,y)
     0.5*sum((y_estimated-y).^2,1)
 end
 
@@ -99,40 +98,33 @@ function optim_error_derivative(w::FlattenedLayers, x::Inputs, y::Outputs, topol
     net_error_derivative(w,x,y,topology)
 end
 
-function derivative_example_same_layer(net::Input, dw::LayerDerivative, oAnt::Output)
-    outputs,current,previous=size(dw)
-    dO=activation_derivative(net) # j * j
-    for o=1:outputs # derivative != 0 only if output = current
-        dw[o,o,:]= oAnt * dO[o] # d0 is a j*j  matrix, but it is diagonal, so diag(d0)*oAnt=d0.*oAnt
-    end
-end
-function backward(w::Layers, o::LayerOutputs, topology::Topology,ld::Output)
-  dW=zero_weights(topology)
 
-  #derivative_example_same_layer(net, dWj[1], oAnt)
+function backward(dW::LayerDerivatives,w::Layers, o::LayerOutputs,net::LayerOutputs, topology::Topology,ld::Output)
   #W indexados con 1 based y topology con 2-based
+  output_layer_index=length(o)
+
   dW[end]=ld.*activation_derivative(o[end])
-  for j=2:length(topology)-1
-
+  delta=dW[end] # n_L
+  for layer=output_layer-1:-1:2
+      delta= (w[layer+1]'*delta).*activation_derivative(net[layer]) #  ((n_l+1 x n_l)' * n_l+1) .* n_l -> n_l
+      # delta is a column vector
+      dW[j]+=delta*o[layer-1]' #  n_l + n_l-1
   end
-  return (dWj, o)
 
 end
 
-function net_derivative_example(w::Layers, x::Input, topology::Topology)
-  o=forward(w,x,topology)
-  backward(w,o,topology)
-end
 
-
-function forward(w::Layers, x::Inputs, topology::Topology)#::LayerOutputs
-  o=LayerOutputs[]
+function forward(w::Layers, x::Input, topology::Topology)#::LayerOutputs
+  o=LayerOutputs()
+  net=LayerOutputs()
   append!(o,x)
   for i=1:length(w)
-    x=activation(w[i]*x)
+    net_i=w[i]*x
+    x=activation(net_i)
+    append!(net,net_i)
     append!(o,x)
   end
-  o
+  o,net
 end
 
 function net_error_derivative(w::Layers, x::Inputs, y::Outputs, topology::Topology)
@@ -141,9 +133,9 @@ function net_error_derivative(w::Layers, x::Inputs, y::Outputs, topology::Topolo
     for i=1:n
       xi=x[:,i]
       yi=y[:,i]
-      o=forward(w,xi,topology)
+      o,net=forward(w,xi,topology)
       ld=loss_derivative(o[end],yi)
-      backward!(dE,o,topology,ld)
+      backward!(dE,w,o,net,topology,ld)
     end
     for j=1:length(dE)
       dE[j] /= n
