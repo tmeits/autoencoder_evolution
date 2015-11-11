@@ -3,34 +3,45 @@
 
 push!(LOAD_PATH,dirname(@__FILE__))
 include("Neural.jl")
+include("Utils.jl")
 
 using FactCheck
 using Neural
+using Utils
 
-topology = [3,4,5] #"output" is the last one
+topology = [3,4,2] #"output" is the last one
 Wz = Neural.zero_weights(topology)
 W = Neural.random_weights(topology)
 dW = Neural.zero_weights(topology)
-n = Neural.Net(topology, W)
 activation = Neural.activation
-x = [2.0 5.0 1.0]'
-y = [0.5 0.3 0.4 0.1 0.7]'
+x = [0.1 0.5 0.9]'
+n = Neural.Net(topology, W)
+y = [0.5 0.3]'
 o = activation(W[2] * activation(W[1]*x))
 xs = rand(3,2)
-ys = rand(5,2)
+ys = rand(2,2)
 os = activation(W[2] * activation(W[1]*xs))
 
+function derivative(W::Neural.Layers,x::Neural.Inputs,y::Neural.Outputs)
+  dE = zeros(W)
+  o,net=Neural.forward(W,vec(x))
+  delta=Neural.loss_derivative(o[3],y).*Neural.activation_derivative(net[2])
+  dE[2]=delta * o[2]'
+  delta=(W[2]'*delta).*Neural.activation_derivative(net[1])
+  dE[1]=delta * o[1]'
+  dE
+end
 
 facts("Test layer creation") do
   @fact length(Wz) --> 2
   @fact size(Wz[1]) --> (4,3)
-  @fact size(Wz[2]) --> (5,4)
+  @fact size(Wz[2]) --> (2,4)
 end
 
 facts("Test layer derivatives creation") do
   @fact length(dW) --> 2
   @fact size(dW[1]) --> (4,3)
-  @fact size(dW[2]) --> (5,4)
+  @fact size(dW[2]) --> (2,4)
 end
 
 facts("Test flatten/unflatten") do
@@ -51,66 +62,58 @@ facts("Test apply") do
   @fact o2 --> o
 end
 
-facts("Test derivative") do
-  dE = Neural.net_error_derivative(W,x,y, topology)
-  @fact length(dE) --> 2
-  @fact size(dE[1]) --> (5,4,3)
-  @fact size(dE[2]) --> (5,5,4)
+facts("Test forward") do
+  o2,net = Neural.forward(n.layers, vec(x))
+  @fact vec(o2[end]) --> roughly(vec(o))
 end
 
-# facts("Test gradient checking") do
-#   EPS = 1.0^-5
-#   (dW, o) = Neural.net_derivative_example(W, vec(x), topology)
-#   dWp = Neural.zero_weights_derivatives(topology, 3)
-#   #println(string("dW", dW))
-#   Wl = deepcopy(W)
-#   for l=1:length(W)
-#     #Wl = copy(W[l])
-#     (nUnits, nWeights) = size(Wl[l])
-#     for u = 1:nUnits
-#       for weight = 1:nWeights
-#         v = Wl[l][u, weight]
-#         Wl[l][u, weight] += EPS
-#         Oplus = Neural.apply(Wl, x)
-#         Wl[l][u, weight] -= 2*EPS
-#         Ominus = Neural.apply(Wl, x)
-#         dWp[l][:,u,weight] = (Oplus - Ominus) / (2 * EPS)
-#         Wl[l][u, weight] += EPS
-#         @fact Wl[l][u, weight] --> v "Wrong restored value"
-#       end
-#     end
-#   end
-#   #println(string("dWp", dWp))
-#   for l = 1:length(W)
-#     @fact dWp[l] --> roughly(dW[l]; atol=EPS) "wrong derivative at layer $l"
-#   end
-# end
+facts("Test derivative sizes") do
+  dE = Neural.net_error_derivative(W,x,y)
+  @fact length(dE) --> 2
+  @fact size(dE[1]) --> (4,3)
+  @fact size(dE[2]) --> (2,4)
+end
 
-# facts("Test network error derivative") do
-#   EPS = 1.0^-5
-#   dE = Neural.net_error_derivative(W, x, y, topology)
-#   dWp = Neural.zero_weights(topology)
-#   Wl = deepcopy(W)
-#   for l=1:length(W)
-#     (nUnits, nWeights) = size(Wl[l])
-#     for u = 1:nUnits
-#       for weight = 1:nWeights
-#         v = Wl[l][u, weight]
-#         Wl[l][u, weight] += EPS
-#         Oplus = Neural.net_error(Wl, x, y)
-#         Wl[l][u, weight] -= 2*EPS
-#         Ominus = Neural.net_error(Wl, x, y)
-#         dWp[l][u,weight] = (Oplus - Ominus) / (2 * EPS)
-#         Wl[l][u, weight] += EPS
-#         @fact Wl[l][u, weight] --> v "Wrong restored value"
-#       end
-#     end
-#   end
-#   #println(string("dWp", dWp))
-#   for l = 1:length(W)
-#     @fact dWp[l] --> roughly(dE[l]; atol=EPS) "wrong error derivative at layer $l"
-#   end
-# end
+
+facts("Test derivative with analytic method") do
+  dE2 = Neural.net_error_derivative(W,x,y,topology)
+  dE=derivative(W,x,y)
+  @fact dE2[1] --> roughly(dE[1])
+  @fact dE2[2] --> roughly(dE[2])
+end
+
+facts("Test gradient checking") do
+  EPS = 1.0^-20
+
+  dE = Neural.zero_weights(topology)
+  o,net=Neural.forward(W,vec(x))
+  ld=Neural.loss_derivative(o[end],vec(y))
+  Neural.backward!(dE,W,o,net,ld)
+
+  dWp = Neural.zero_weights(topology)
+  Wl = deepcopy(W)
+  for l=1:length(W)
+    #Wl = copy(W[l])
+    (nUnits, nWeights) = size(Wl[l])
+    for u = 1:nUnits
+      for weight = 1:nWeights
+        v = Wl[l][u, weight]
+        Wl[l][u, weight] += EPS
+        Oplus = Neural.loss(Neural.apply(Wl, x),y)
+        Wl[l][u, weight] -= 2*EPS
+        Ominus = Neural.loss(Neural.apply(Wl, x),y)
+        dWp[l][u,weight] = (Oplus - Ominus)[1] / (2 * EPS)
+        Wl[l][u, weight] = v
+      end
+    end
+  end
+  #println(string("dWp", dWp))
+  for l = 1:length(W)
+    @fact dE[l] --> roughly(dWp[l]) "wrong derivative at layer $l"
+  end
+  #println(dWp[1])
+  #println(dE[1])
+end
 
 # facts("Test network error derivative for dataset") do
 #   EPS = 1.0^-5
@@ -157,15 +160,16 @@ end
 #   @fact os2 --> roughly(ys)
 # end
 
-#=
+
 facts("Test net training") do
   n = Neural.Net(topology, copy(W))
+  #Neural.trainbp!(n, xs, ys,100,0.1)
   Neural.train!(n, xs, ys)
   os2 = Neural.apply(n.layers, xs)
-  println(n.layers)
+  #println(n.layers)
   @fact os2 --> roughly(ys)
 end
-=#
+
 
 #=
 using Datasets
