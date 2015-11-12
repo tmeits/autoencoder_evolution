@@ -1,5 +1,7 @@
 module Neural
+
 export network_topology
+
 using Optim
 
 macro print_size(zzz)

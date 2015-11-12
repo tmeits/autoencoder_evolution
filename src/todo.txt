@@ -4,3 +4,10 @@
 * Regularization
 * validation set & (early stopping)
 * Dropout
+
+* layer "Types"?
+
+* weight decay?
+* convolutional?
+
+* rprop?
