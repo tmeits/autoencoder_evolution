@@ -54,7 +54,7 @@ end
 
 
 function flatten_layers(unflattened_w::Layers)
-  w=zeros(0)
+  w=Float64[]
   for i=1:length(unflattened_w)
     f=reshape(unflattened_w[i],length(unflattened_w[i]))
     w=[w ; f]
@@ -73,8 +73,14 @@ function activation_derivative(x)
    a.*(1-a) #(1-tanh(x).^2)
 end
 
+
+function loss_derivative(y_estimated::Output,y::Output)
+    loss_derivative(y_estimated'',y'')
+end
+
+
 #Rn -> Rn, for each element. Vectorized implementation.
-function loss_derivative(y_estimated,y)
+function loss_derivative(y_estimated::Outputs,y::Outputs)
     (y_estimated-y)
 end
 
@@ -98,7 +104,7 @@ end
 function optim_error(w::FlattenedLayers, x::Inputs, y::Outputs, topology::Topology)
     w=unflatten_layers(w,topology)
     error=net_error(w,x,y)
-    #@print_var error
+    @print_var error
     return error
 end
 function net_error(w::Layers,x::Inputs,y::Outputs)
@@ -113,7 +119,7 @@ function optim_error_derivative(w::FlattenedLayers, x::Inputs, y::Outputs, topol
 end
 
 
-function backward!(dE::LayerDerivatives,w::Layers, o::LayerOutputs,net::LayerOutputs,ld::Output)
+function backward!(dE::LayerDerivatives,w::Layers, o::LayerOutputs,net::LayerOutputs,ld::Outputs)
   #W indexados con 1 based y topology con 2-based
   output_layer_index=length(o)
   delta=ld.*activation_derivative(net[end]) #  n_L .*  n_L -> n_L
@@ -140,7 +146,7 @@ function forward(w::Layers, x::Input)#::LayerOutputs
 end
 
 function net_error_derivative(w::Layers, x::Inputs, y::Outputs)
-    dE=zeros(w)
+    dE=zero_weights(w)
     n=size(x,2)
     for i=1:n
       #@print_var(i)
@@ -151,11 +157,19 @@ function net_error_derivative(w::Layers, x::Inputs, y::Outputs)
       backward!(dE,w,o,net,ld)
     end
     for j=1:length(dE)
-      dE[j] /= -n
+      dE[j] /= n
     end
     return dE
 end
 
+
+function zero_weights(w::Layers)
+  wz = Layers(length(w))
+  for i=1:length(wz)
+    wz[i]=zeros(w[i])
+  end
+  wz
+end
 
 function zero_weights(topology::Topology)
   w = Layers(length(topology)-1)
@@ -174,7 +188,7 @@ function random_weights(topology::Topology)
 end
 
 function train(topology::Topology, x::Inputs, y::Outputs)
-      n = Net(random_weights(n.topology), topology)
+      n = Net(topology,random_weights(topology))
       train!(n, x, y)
       return n
 end
@@ -184,15 +198,15 @@ function train!(n::Net,x::Inputs,y::Outputs)
       g = function(w,storage); storage = flatten_layers(optim_error_derivative(w,x,y,n.topology)); end
       #n.layers = random_weights(n.topology)
       flattened_layers = flatten_layers(n.layers)
-      #Optim.optimize(f, flattened_layers, method = :nelder_mead)
-      Optim.optimize(f,g, flattened_layers, method = :cg)
+      Optim.optimize(f, flattened_layers, method = :gradient_descent)
+      #Optim.optimize(f,g, flattened_layers, method = :cg)
       n.layers = unflatten_layers(flattened_layers, n.topology)
 end
 
 
 function trainbp(topology::Topology, x::Inputs, y::Outputs,iterations::Int,learning_rate::Float64)
-      n = Net(random_weights(n.topology), topology)
-      trainbp!(n,x,y,iterations)
+      n = Net(topology,random_weights(topology))
+      trainbp!(n,x,y,iterations,learning_rate)
       n
 end
 
@@ -200,8 +214,30 @@ function trainbp!(n::Net, x::Inputs, y::Outputs,iterations::Int,learning_rate::F
     for i=1:iterations
           dE=net_error_derivative(n.layers,x,y)
           for i=1:length(dE)
-              n.layers[i]+=learning_rate*dE[i]
+              n.layers[i]-=learning_rate*dE[i]
+              #println(dE[i])
           end
+          @print_var net_error(n.layers,x,y)
+    end
+end
+
+
+function trainbp_minibatch(topology::Topology, x::Inputs, y::Outputs,iterations::Int,learning_rate::Float64,batch_size::Int)
+      n = Net(topology,random_weights(topology))
+      trainbp_minibatch!(n,x,y,iterations,learning_rate,batch_size)
+      n
+end
+
+function trainbp_minibatch!(net::Net, x::Inputs, y::Outputs,iterations::Int,learning_rate::Float64,batch_size::Int)
+    n=size(x,2)
+    for i=1:iterations
+          indices=randperm(n)[1:batch_size]
+          dE=net_error_derivative(net.layers,x[:,indices],y[:,indices])
+          for i=1:length(dE)
+              net.layers[i]-=learning_rate*dE[i]
+              #println(dE[i])
+          end
+          @print_var net_error(net.layers,x,y)
     end
 end
 

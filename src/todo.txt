@@ -1,0 +1,6 @@
+* generic loss
+* generic activation
+* Bias
+* Regularization
+* validation set & (early stopping)
+* Dropout
